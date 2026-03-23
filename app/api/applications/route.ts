@@ -1,15 +1,28 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { NextResponse } from "next/server";
+import { getAuthenticatedActor } from "@/lib/auth";
+import { hasRequiredRole, READ_ROLES } from "@/lib/applications";
+import { createAdminClient } from "@/lib/supabaseServer";
 
 export async function GET(request: Request) {
+  const actor = await getAuthenticatedActor(request);
+
+  if (!actor) {
+    return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  }
+
+  if (!hasRequiredRole(actor, READ_ROLES)) {
+    return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+  }
+
   const url = new URL(request.url);
-  const status = url.searchParams.get('status');
-  const agentId = url.searchParams.get('agentId');
-  const search = url.searchParams.get('search');
-  const page = Number(url.searchParams.get('page') ?? '1');
-  const pageSize = Number(url.searchParams.get('pageSize') ?? '25');
+  const status = url.searchParams.get("status");
+  const agentId = url.searchParams.get("agentId");
+  const search = url.searchParams.get("search");
+  const page = Number(url.searchParams.get("page") ?? "1");
+  const pageSize = Math.min(Number(url.searchParams.get("pageSize") ?? "25"), 100);
 
   const offset = (Math.max(page, 1) - 1) * pageSize;
+  const supabase = createAdminClient();
 
   let query = supabase
     .from('applications')
@@ -26,7 +39,16 @@ export async function GET(request: Request) {
   }
 
   if (agentId) {
+    if (actor.role === "agent" && agentId !== actor.id) {
+      return NextResponse.json(
+        { ok: false, error: "Agents can only read their assigned applications" },
+        { status: 403 }
+      );
+    }
+
     query = query.eq('agent_id', agentId);
+  } else if (actor.role === "agent") {
+    query = query.eq("agent_id", actor.id);
   }
 
   if (search) {

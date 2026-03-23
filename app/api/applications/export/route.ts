@@ -1,12 +1,25 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
-import ExcelJS from 'exceljs';
-import PDFDocument from 'pdfkit';
+import { NextResponse } from "next/server";
+import ExcelJS from "exceljs";
+import PDFDocument from "pdfkit";
+import { getAuthenticatedActor } from "@/lib/auth";
+import { hasRequiredRole, READ_ROLES } from "@/lib/applications";
+import { createAdminClient } from "@/lib/supabaseServer";
 
 export async function GET(request: Request) {
+  const actor = await getAuthenticatedActor(request);
+
+  if (!actor) {
+    return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  }
+
+  if (!hasRequiredRole(actor, READ_ROLES)) {
+    return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+  }
+
   const url = new URL(request.url);
-  const format = (url.searchParams.get('format') ?? 'excel').toLowerCase();
-  const status = url.searchParams.get('status');
+  const format = (url.searchParams.get("format") ?? "excel").toLowerCase();
+  const status = url.searchParams.get("status");
+  const supabase = createAdminClient();
 
   let query = supabase
     .from('applications')
@@ -16,6 +29,10 @@ export async function GET(request: Request) {
 
   if (status) {
     query = query.eq('status_id', status);
+  }
+
+  if (actor.role === "agent") {
+    query = query.eq("agent_id", actor.id);
   }
 
   const { data, error } = await query;

@@ -1,0 +1,2 @@
+-- Minimal seed file so `supabase db reset` succeeds in local development.
+-- Add deterministic local-only data here as the backend evolves.

@@ -1,8 +1,25 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { NextResponse } from "next/server";
+import { getAuthenticatedActor } from "@/lib/auth";
+import {
+  canAccessApplication,
+  getApplicationAccessRecord,
+  hasRequiredRole,
+  MUTATION_ROLES,
+} from "@/lib/applications";
+import { createAdminClient } from "@/lib/supabaseServer";
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const actor = await getAuthenticatedActor(request);
+
+  if (!actor) {
+    return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+  }
+
+  if (!hasRequiredRole(actor, MUTATION_ROLES)) {
+    return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+  }
+
+  const { id } = await params;
   type ResubmitBody = { carrierId?: string; payload?: unknown };
   type AuditEvent = {
     application_id: string;
@@ -17,14 +34,33 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const body = (await request.json().catch(() => ({}))) as ResubmitBody;
   const { carrierId, payload } = body;
-
-  const userId = request.headers.get('x-user-id');
+  const supabase = createAdminClient();
   const now = new Date().toISOString();
+  let application;
 
-  const updates = {
+  try {
+    application = await getApplicationAccessRecord(supabase, id);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 });
+  }
+
+  if (!application) {
+    return NextResponse.json({ ok: false, error: "Application not found" }, { status: 404 });
+  }
+
+  if (!canAccessApplication(actor, application)) {
+    return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+  }
+
+  const updates: {
+    status_id: "resubmitted";
+    last_resubmitted_at: string;
+    updated_by: string;
+    carrier_id?: string | null;
+  } = {
     status_id: 'resubmitted',
     last_resubmitted_at: now,
-    updated_by: userId
+    updated_by: actor.id
   };
 
   const auditEvent: AuditEvent = {
@@ -35,8 +71,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       payload: payload ?? null,
       carrierResponse: null
     },
-    performed_by: userId
+    performed_by: actor.id
   };
+
+  if (carrierId !== undefined) {
+    updates.carrier_id = carrierId;
+  }
 
   // If carrier ID is provided, attempt to send payload, if carrier endpoint exists.
   if (carrierId) {
@@ -79,7 +119,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
   }
 
-  await supabase.from('application_audit_logs').insert(auditEvent);
+  const { error: auditError } = await supabase.from("application_audit_logs").insert(auditEvent);
+
+  if (auditError) {
+    return NextResponse.json(
+      { ok: false, error: `Application resubmitted, but audit logging failed: ${auditError.message}` },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -35,6 +35,20 @@ This repository includes a backend API for managing applications (list, approve/
 
 See the full API reference in [docs/api.md](./docs/api.md).
 
+## Backend Environment
+
+The backend expects these environment variables for server-side route handlers:
+
+- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_ANON_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Authenticated API requests should send a Supabase access token in the `Authorization` header:
+
+```http
+Authorization: Bearer <access-token>
+```
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

@@ -2,12 +2,19 @@
 
 This document describes the backend API endpoints provided by the Next.js application for managing insurance applications.
 
-## Authentication & Headers
+## Authentication
 
-- Currently, the API uses a simple header-based user identity convention. For all write operations, include:
-  - `x-user-id`: the UUID of the acting user (e.g., agent or reviewer)
+- Application endpoints now require a valid Supabase access token in:
+  - `Authorization: Bearer <access-token>`
+- The API resolves the acting user from the bearer token and authorizes requests using the caller's application role (`admin`, `reviewer`, `agent`) from `profiles`.
+- Server-side route handlers use a service-role client for database access and enforce authorization in route code.
+- `GET /api/health` remains unauthenticated for infrastructure checks.
 
-In a real deployment, swap this for a proper auth system (Supabase Auth JWT + RLS). See `supabase/policies.sql` for sample policies.
+### Role Behavior
+
+- `admin`: full read/write access.
+- `reviewer`: full read access and write access to application management operations.
+- `agent`: read access to assigned applications only, plus write access to assigned applications only.
 
 ---
 
@@ -22,6 +29,8 @@ Returns a simple status plus a sample row from `application_statuses`.
 ## 2) List / Filter Applications
 
 - **GET** `/api/applications`
+
+Requires authentication.
 
 ### Query Parameters
 
@@ -47,6 +56,8 @@ Returns a simple status plus a sample row from `application_statuses`.
 
 - **PATCH** `/api/applications/{id}/status`
 
+Requires authentication. Allowed for `admin`, `reviewer`, and the assigned `agent`.
+
 ### Body
 
 ```json
@@ -65,6 +76,8 @@ This endpoint also creates an audit log entry.
 
 - **POST** `/api/applications/{id}/request-documents`
 
+Requires authentication. Allowed for `admin`, `reviewer`, and the assigned `agent`.
+
 ### Body
 
 ```json
@@ -82,6 +95,8 @@ This updates the application status to `needs_docs` and records an audit log.
 
 - **PATCH** `/api/applications/{id}/assign`
 
+Requires authentication. Allowed for `admin` and `reviewer`.
+
 ### Body
 
 ```json
@@ -95,6 +110,8 @@ To unassign, pass `agentId` as `null`.
 ## 6) Resubmit to Carrier
 
 - **POST** `/api/applications/{id}/resubmit`
+
+Requires authentication. Allowed for `admin`, `reviewer`, and the assigned `agent`.
 
 ### Body
 
@@ -114,6 +131,8 @@ This endpoint updates the application status to `resubmitted` and logs the carri
 - **GET** `/api/applications/export?format=excel` (default)
 - **GET** `/api/applications/export?format=pdf`
 
+Requires authentication.
+
 Supports the same query params as the list endpoint (e.g. `status`).
 
 ---
@@ -122,4 +141,5 @@ Supports the same query params as the list endpoint (e.g. `status`).
 
 - The backend uses Supabase for data storage.
 - Schema is defined in `supabase/migrations/001_initial.sql`.
+- Auth role storage is defined in `supabase/migrations/002_profiles.sql`.
 - Policies are outlined in `supabase/policies.sql`.
