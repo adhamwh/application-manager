@@ -71,8 +71,11 @@ export async function GET(request: Request) {
   if (format === 'pdf') {
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     const chunks: Uint8Array[] = [];
-
-    doc.on('data', (chunk: Uint8Array) => chunks.push(chunk));
+    const pdfReady = new Promise<Buffer>((resolve, reject) => {
+      doc.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
 
     doc.fontSize(16).text('Applications Export', { align: 'center' });
     doc.moveDown();
@@ -120,8 +123,8 @@ export async function GET(request: Request) {
 
     doc.end();
 
-    const pdfBuffer = Buffer.concat(chunks);
-    return new Response(pdfBuffer, {
+    const pdfBuffer = await pdfReady;
+    return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="applications.pdf"'

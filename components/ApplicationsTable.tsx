@@ -15,16 +15,23 @@ type AgentRecord = {
   email: string;
 } | null;
 
+type CarrierRecord = {
+  id: string;
+  name: string;
+} | null;
+
 type ApplicationApiRow = {
   id: string;
   applicant_name: string | null;
   applicant_email: string | null;
   status_id: string;
   agent_id: string | null;
+  carrier_id: string | null;
   submitted_at: string | null;
   requested_documents: unknown;
   data: { notes?: string | null } | null;
   agents?: AgentRecord[] | AgentRecord;
+  carriers?: CarrierRecord[] | CarrierRecord;
   application_statuses?: StatusRecord[] | StatusRecord;
 };
 
@@ -36,9 +43,21 @@ type ApplicationRow = {
   status_label: string;
   agent_id: string | null;
   agent_name: string;
+  carrier_id: string | null;
+  carrier_name: string;
   submitted_at: string | null;
   notes: string | null;
   requested_documents: string[];
+};
+
+type AgentLookup = {
+  id: string;
+  full_name: string;
+};
+
+type CarrierLookup = {
+  id: string;
+  name: string;
 };
 
 type ActiveAction =
@@ -71,6 +90,7 @@ function firstRelation<T>(value: T[] | T | null | undefined) {
 
 function toApplicationRow(app: ApplicationApiRow): ApplicationRow {
   const agent = firstRelation(app.agents);
+  const carrier = firstRelation(app.carriers);
   const status = firstRelation(app.application_statuses);
   const requestedDocuments = Array.isArray(app.requested_documents)
     ? app.requested_documents.filter((document): document is string => typeof document === "string")
@@ -84,6 +104,8 @@ function toApplicationRow(app: ApplicationApiRow): ApplicationRow {
     status_label: status?.label ?? app.status_id ?? "Unknown",
     agent_id: app.agent_id ?? null,
     agent_name: agent?.full_name ?? "Unassigned",
+    carrier_id: app.carrier_id ?? null,
+    carrier_name: carrier?.name ?? "Unassigned",
     submitted_at: app.submitted_at ?? null,
     notes: app.data?.notes ?? null,
     requested_documents: requestedDocuments,
@@ -97,6 +119,8 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
     search: "",
   });
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
+  const [agents, setAgents] = useState<AgentLookup[]>([]);
+  const [carriers, setCarriers] = useState<CarrierLookup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
@@ -147,16 +171,56 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
     }
   }, [filters.agent, filters.search, filters.status]);
 
+  const loadLookups = useCallback(async () => {
+    try {
+      const [agentsResponse, carriersResponse] = await Promise.all([
+        apiFetch("/api/agents"),
+        apiFetch("/api/carriers"),
+      ]);
+      const [agentsResult, carriersResult] = await Promise.all([
+        agentsResponse.json(),
+        carriersResponse.json(),
+      ]);
+
+      if (agentsResponse.ok && agentsResult.ok) {
+        setAgents(
+          (agentsResult.data ?? []).filter(
+            (agent: AgentLookup) =>
+              typeof agent.id === "string" && typeof agent.full_name === "string"
+          )
+        );
+      } else {
+        setAgents([]);
+      }
+
+      if (carriersResponse.ok && carriersResult.ok) {
+        setCarriers(
+          (carriersResult.data ?? []).filter(
+            (carrier: CarrierLookup) =>
+              typeof carrier.id === "string" && typeof carrier.name === "string"
+          )
+        );
+      } else {
+        setCarriers([]);
+      }
+    } catch {
+      setAgents([]);
+      setCarriers([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchApplications();
+    loadLookups();
 
     const handleAuthChange = () => {
       fetchApplications();
+      loadLookups();
     };
 
     window.addEventListener("admin-man-auth-changed", handleAuthChange);
     return () => window.removeEventListener("admin-man-auth-changed", handleAuthChange);
-  }, [fetchApplications, refreshToken]);
+  }, [fetchApplications, loadLookups, refreshToken]);
 
   const getStatusBadge = (status: string) => {
     const badges = {
@@ -196,7 +260,7 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
       notes: "",
       documents: app.requested_documents.join(", "),
       agentId: app.agent_id ?? "",
-      carrierId: "",
+      carrierId: app.carrier_id ?? "",
       payload: "",
     });
   };
@@ -259,16 +323,13 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
       }
 
       if (activeAction.type === "assign") {
-        if (!actionForm.agentId) {
-          throw new Error("Please provide an agent UUID or clear the field to unassign.");
-        }
-        if (!isUuid(actionForm.agentId)) {
-          throw new Error("Please provide a valid agent UUID.");
+        if (actionForm.agentId && !isUuid(actionForm.agentId)) {
+          throw new Error("Please select a valid agent.");
         }
         const response = await apiFetch(`/api/applications/${appId}/assign`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId: actionForm.agentId }),
+          body: JSON.stringify({ agentId: actionForm.agentId || null }),
         });
         const result = await response.json();
         if (!response.ok || !result.ok) {
@@ -291,7 +352,7 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
 
         const carrierId = actionForm.carrierId.trim();
         if (carrierId && !isUuid(carrierId)) {
-          throw new Error("Carrier ID must be a valid UUID if provided.");
+          throw new Error("Please select a valid carrier.");
         }
 
         const response = await apiFetch(`/api/applications/${appId}/resubmit`, {
@@ -352,7 +413,7 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
       <div className="p-6 border-b border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-5 gap-6 mb-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
             <select
@@ -369,16 +430,21 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Agent UUID</label>
-            <input
-              type="text"
-              placeholder="Filter by assigned agent UUID"
-              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 placeholder-gray-500 shadow-sm hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            <label className="block text-sm font-medium text-gray-700 mb-2">Agent</label>
+            <select
+              className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 shadow-sm hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               value={filters.agent}
               onChange={(event) => handleFilterChange("agent", event.target.value)}
-            />
+            >
+              <option value="">All Agents</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.full_name}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-3">
             <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
             <input
               type="text"
@@ -388,10 +454,6 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
               onChange={(event) => handleFilterChange("search", event.target.value)}
             />
           </div>
-        </div>
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Agent and carrier lookup endpoints are not present in the backend yet, so this screen uses
-          direct UUID entry for assignment and filtering.
         </div>
         <div className="flex flex-wrap justify-end gap-3">
           <button
@@ -447,6 +509,9 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                   Assigned Agent
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Carrier
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date Submitted
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -457,7 +522,7 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
             <tbody className="bg-white divide-y divide-gray-200">
               {applications.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     No applications found
                   </td>
                 </tr>
@@ -481,6 +546,9 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {app.agent_name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {app.carrier_name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(app.submitted_at)}
@@ -581,6 +649,10 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                     <p className="text-sm text-gray-900">{activeAction.app.agent_name}</p>
                   </div>
                   <div>
+                    <p className="text-xs uppercase text-gray-400">Carrier</p>
+                    <p className="text-sm text-gray-900">{activeAction.app.carrier_name}</p>
+                  </div>
+                  <div>
                     <p className="text-xs uppercase text-gray-400">Submitted</p>
                     <p className="text-sm text-gray-900">{formatDate(activeAction.app.submitted_at)}</p>
                   </div>
@@ -653,16 +725,22 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                   {activeAction.type === "assign" && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Agent UUID
+                        Assign Agent
                       </label>
-                      <input
+                      <select
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="Paste the agent UUID"
                         value={actionForm.agentId}
                         onChange={(event) =>
                           setActionForm((current) => ({ ...current, agentId: event.target.value }))
                         }
-                      />
+                      >
+                        <option value="">Unassigned</option>
+                        {agents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>
+                            {agent.full_name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
 
@@ -670,11 +748,10 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Carrier UUID (optional)
+                          Carrier
                         </label>
-                        <input
+                        <select
                           className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                          placeholder="Paste the carrier UUID if you have one"
                           value={actionForm.carrierId}
                           onChange={(event) =>
                             setActionForm((current) => ({
@@ -682,7 +759,14 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                               carrierId: event.target.value,
                             }))
                           }
-                        />
+                        >
+                          <option value="">No carrier</option>
+                          {carriers.map((carrier) => (
+                            <option key={carrier.id} value={carrier.id}>
+                              {carrier.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
