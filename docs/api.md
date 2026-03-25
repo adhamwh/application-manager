@@ -137,6 +137,22 @@ Supports the same query params as the list endpoint (e.g. `status`).
 
 ---
 
+## 8) Delete Applicant / Application
+
+- **DELETE** `/api/applications/{id}`
+
+Requires authentication. Allowed for `admin` and `reviewer`.
+
+Deletes the application record for that applicant. Related documents and audit logs are also removed by database cascade rules.
+
+### Response
+
+```json
+{ "ok": true }
+```
+
+---
+
 ## Notes
 
 - The backend uses Supabase for data storage.

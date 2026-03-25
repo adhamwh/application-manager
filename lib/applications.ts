@@ -9,6 +9,7 @@ type ApplicationAccessRecord = {
 
 export const MUTATION_ROLES: AppRole[] = ["admin", "reviewer", "agent"];
 export const READ_ROLES: AppRole[] = ["admin", "reviewer", "agent"];
+export const DELETE_ROLES: AppRole[] = ["admin", "reviewer"];
 
 export function hasRequiredRole(actor: AuthenticatedActor, allowedRoles: AppRole[]) {
   return allowedRoles.includes(actor.role);
@@ -45,4 +46,8 @@ export function canAccessApplication(actor: AuthenticatedActor, application: App
 
 export function canAssignApplications(actor: AuthenticatedActor) {
   return actor.role === "admin" || actor.role === "reviewer";
+}
+
+export function canDeleteApplications(actor: AuthenticatedActor) {
+  return DELETE_ROLES.includes(actor.role);
 }

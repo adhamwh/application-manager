@@ -20,7 +20,7 @@ import { apiFetch } from '@/lib/apiClient';
 import ReportFiltersComponent, { ReportFilters } from './ReportFilters';
 
 interface CustomReportData {
-  data: Array<Record<string, any>>;
+  data: Array<Record<string, unknown>>;
   metrics: string[];
   dimensions: string[];
   filters: {
@@ -113,10 +113,14 @@ export default function CustomReport() {
       }
 
       // Transform the API response to match our expected format
+      const rows: Array<Record<string, unknown>> = Array.isArray(result?.data?.rows)
+        ? (result.data.rows as Array<Record<string, unknown>>)
+        : [];
+
       const transformedData = {
-        data: result.data.rows.map((row: any) => ({
+        data: rows.map((row) => ({
           ...row,
-          [selectedMetrics[0]]: row.value,
+          [selectedMetrics[0]]: row["value"],
         })),
         metrics: selectedMetrics,
         dimensions: selectedDimensions,
@@ -149,7 +153,7 @@ export default function CustomReport() {
     );
   };
 
-  const formatValue = (value: any, metric: string) => {
+  const formatValue = (value: unknown, metric: string): string | number => {
     if (typeof value === 'number') {
       if (metric.includes('revenue')) {
         return new Intl.NumberFormat('en-US', {
@@ -164,18 +168,29 @@ export default function CustomReport() {
       }
       return value.toLocaleString();
     }
-    return value;
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value === null || value === undefined) {
+      return '-';
+    }
+    return String(value);
+  };
+
+  const formatDimensionValue = (value: unknown): string | number => {
+    if (typeof value === 'string' || typeof value === 'number') {
+      return value;
+    }
+    if (value === null || value === undefined) {
+      return '-';
+    }
+    return String(value);
   };
 
   const renderChart = () => {
     if (!data || data.data.length === 0) return null;
 
-    const dimensionLabels = selectedDimensions.map(dim =>
-      AVAILABLE_DIMENSIONS.find(d => d.value === dim)?.label || dim
-    );
-
     const primaryDimension = selectedDimensions[0];
-    const dimensionLabel = AVAILABLE_DIMENSIONS.find(d => d.value === primaryDimension)?.label || primaryDimension;
 
     switch (chartType) {
       case 'line':
@@ -405,7 +420,7 @@ export default function CustomReport() {
                   <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     {selectedDimensions.map((dimension) => (
                       <td key={dimension} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {row[dimension] || '-'}
+                        {formatDimensionValue(row[dimension])}
                       </td>
                     ))}
                     {selectedMetrics.map((metric) => (

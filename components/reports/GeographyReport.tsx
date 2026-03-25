@@ -50,6 +50,35 @@ interface GeographyData {
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#ff7c7c'];
 
+function toArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function normalizeGeographyData(payload: unknown): GeographyData {
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const breakdown =
+    raw.breakdown && typeof raw.breakdown === 'object'
+      ? (raw.breakdown as Record<string, unknown>)
+      : {};
+  const filters =
+    raw.filters && typeof raw.filters === 'object'
+      ? (raw.filters as Record<string, unknown>)
+      : {};
+
+  return {
+    // Support both response shapes:
+    // 1) { byCountry, byRegion, byCity, filters }
+    // 2) { breakdown: { byCountry, byRegion, byCity }, filters }
+    byCountry: toArray(raw.byCountry ?? breakdown.byCountry),
+    byRegion: toArray(raw.byRegion ?? breakdown.byRegion),
+    byCity: toArray(raw.byCity ?? breakdown.byCity),
+    filters: {
+      dateFrom: typeof filters.dateFrom === 'string' ? filters.dateFrom : null,
+      dateTo: typeof filters.dateTo === 'string' ? filters.dateTo : null,
+    },
+  };
+}
+
 export default function GeographyReport() {
   const [data, setData] = useState<GeographyData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +113,7 @@ export default function GeographyReport() {
         throw new Error(result.error || 'Failed to fetch data');
       }
 
-      setData(result.data);
+      setData(normalizeGeographyData(result.data));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -134,47 +163,41 @@ export default function GeographyReport() {
     rejected: number;
     approvalRate: number;
   }> => {
-    const rawData = (() => {
-      switch (viewMode) {
-        case 'country':
-          return data.byCountry;
-        case 'region':
-          return data.byRegion;
-        case 'city':
-          return data.byCity;
-        default:
-          return data.byCountry;
-      }
-    })() ?? [];
-
-    if (!Array.isArray(rawData)) {
-      return [];
-    }
-
-    return rawData.map((item) => ({
-      location: (item as any)[getDataKey()] || 'Unknown',
-      applications: item.applications,
-      approved: item.approved,
-      rejected: item.rejected,
-      approvalRate: item.approvalRate,
-    }));
-  };
-
-  const getDataKey = () => {
     switch (viewMode) {
       case 'country':
-        return 'countryName';
+        return data.byCountry.map((item) => ({
+          location: item.countryName || 'Unknown',
+          applications: item.applications,
+          approved: item.approved,
+          rejected: item.rejected,
+          approvalRate: item.approvalRate,
+        }));
       case 'region':
-        return 'regionName';
+        return data.byRegion.map((item) => ({
+          location: item.regionName || 'Unknown',
+          applications: item.applications,
+          approved: item.approved,
+          rejected: item.rejected,
+          approvalRate: item.approvalRate,
+        }));
       case 'city':
-        return 'cityName';
+        return data.byCity.map((item) => ({
+          location: item.cityName || 'Unknown',
+          applications: item.applications,
+          approved: item.approved,
+          rejected: item.rejected,
+          approvalRate: item.approvalRate,
+        }));
       default:
-        return 'countryName';
+        return [];
     }
   };
 
   const currentData = getCurrentData();
-  const dataKey = getDataKey();
+  const averageApprovalRate =
+    currentData.length > 0
+      ? currentData.reduce((sum, item) => sum + item.approvalRate, 0) / currentData.length
+      : 0;
 
   // Prepare data for pie chart (applications by location)
   const pieData = currentData.map((item, index) => ({
@@ -271,12 +294,12 @@ export default function GeographyReport() {
                 <span className="text-white text-sm font-bold">✅</span>
               </div>
             </div>
-            <div className="ml-4">
-              <dt className="text-sm font-medium text-gray-500 truncate">Avg Approval Rate</dt>
-              <dd className="text-2xl font-semibold text-gray-900">
-                {(currentData.reduce((sum, item) => sum + item.approvalRate, 0) / currentData.length).toFixed(1)}%
-              </dd>
-            </div>
+	            <div className="ml-4">
+	              <dt className="text-sm font-medium text-gray-500 truncate">Avg Approval Rate</dt>
+	              <dd className="text-2xl font-semibold text-gray-900">
+	                {averageApprovalRate.toFixed(1)}%
+	              </dd>
+	            </div>
           </div>
         </div>
       </div>

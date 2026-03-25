@@ -105,6 +105,7 @@ const AddApplicationCard = ({ onCreated }: AddApplicationCardProps) => {
         submittedAt: "",
         notes: "",
       });
+      setOpen(false);
       setMessage("Application created successfully.");
       onCreated?.();
     } catch (submitError) {
@@ -124,13 +125,21 @@ const AddApplicationCard = ({ onCreated }: AddApplicationCardProps) => {
       </div>
       <div className="px-6 py-5">
         {!open ? (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
-          >
-            Create Application
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(true);
+                setMessage(null);
+                setError(null);
+              }}
+              className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+            >
+              Create Application
+            </button>
+            {message && <span className="text-sm text-emerald-700">{message}</span>}
+            {lookupError && <span className="text-sm text-red-600">{lookupError}</span>}
+          </div>
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

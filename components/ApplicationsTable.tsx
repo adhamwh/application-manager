@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Download, Eye, FileText, RotateCcw, User, X } from "lucide-react";
+import { Check, Download, Eye, FileText, RotateCcw, Trash2, User, X } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 
 type StatusRecord = {
@@ -66,7 +66,8 @@ type ActiveAction =
   | { type: "reject"; app: ApplicationRow }
   | { type: "request_docs"; app: ApplicationRow }
   | { type: "assign"; app: ApplicationRow }
-  | { type: "resubmit"; app: ApplicationRow };
+  | { type: "resubmit"; app: ApplicationRow }
+  | { type: "delete"; app: ApplicationRow };
 
 const STATUS_OPTIONS = [
   { id: "draft", label: "Draft" },
@@ -370,6 +371,17 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
         setActionMessage("Application resubmitted to carrier.");
       }
 
+      if (activeAction.type === "delete") {
+        const response = await apiFetch(`/api/applications/${appId}`, {
+          method: "DELETE",
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.ok) {
+          throw new Error(result?.error || "Failed to delete applicant");
+        }
+        setActionMessage("Applicant deleted successfully.");
+      }
+
       await fetchApplications();
       closeAction();
     } catch (submitError) {
@@ -603,6 +615,14 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                         >
                           <RotateCcw className="w-4 h-4" />
                         </button>
+                        <button
+                          className="text-rose-600 hover:text-rose-900"
+                          onClick={() => openAction("delete", app)}
+                          title="Delete applicant"
+                          aria-label="Delete applicant"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -624,6 +644,7 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                 {activeAction.type === "request_docs" && "Request Additional Documents"}
                 {activeAction.type === "assign" && "Assign Agent"}
                 {activeAction.type === "resubmit" && "Resubmit to Carrier"}
+                {activeAction.type === "delete" && "Delete Applicant"}
               </h3>
               <button onClick={closeAction} className="text-sm text-gray-500 hover:text-gray-700">
                 Close
@@ -787,6 +808,16 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                     </>
                   )}
 
+                  {activeAction.type === "delete" && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                      <p className="text-sm font-medium text-red-800">
+                        This will permanently delete <strong>{activeAction.app.applicant_name}</strong>{" "}
+                        and their application record.
+                      </p>
+                      <p className="mt-1 text-sm text-red-700">This action cannot be undone.</p>
+                    </div>
+                  )}
+
                   {actionError && <p className="text-sm text-red-600">{actionError}</p>}
                 </div>
               )}
@@ -803,9 +834,13 @@ const ApplicationsTable = ({ refreshToken = 0 }: { refreshToken?: number }) => {
                 <button
                   onClick={handleActionSubmit}
                   disabled={actionLoading}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-60"
+                  className={`px-4 py-2 rounded-lg text-white transition-colors shadow-sm disabled:opacity-60 ${
+                    activeAction.type === "delete"
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  }`}
                 >
-                  {actionLoading ? "Working..." : "Confirm"}
+                  {actionLoading ? "Working..." : activeAction.type === "delete" ? "Delete Applicant" : "Confirm"}
                 </button>
               </div>
             )}

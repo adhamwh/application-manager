@@ -134,6 +134,12 @@ export async function GET(request: Request) {
     } else if (!hasDateFilter && row.last_resubmitted_at) {
       addStageEvent(stageEvents, "resubmitted", row.id, row.last_resubmitted_at, hasDateFilter);
     }
+
+    // For the default (no date filter) view, "Needs Documents" should represent
+    // applications that are currently in that stage.
+    if (!hasDateFilter && row.status_id === "needs_docs") {
+      addStageEvent(stageEvents, "needs_docs", row.id, null, hasDateFilter);
+    }
   }
 
   const { data: auditLogs, error: auditError } = await supabase
@@ -159,7 +165,11 @@ export async function GET(request: Request) {
       (row.event_type === "status_change" && nextStatus === "needs_docs");
 
     if (isNeedsDocsEvent) {
-      addStageEvent(stageEvents, "needs_docs", row.application_id, row.performed_at, hasDateFilter);
+      // When a date filter is applied, derive "Needs Documents" from audited events
+      // inside the selected time window.
+      if (hasDateFilter) {
+        addStageEvent(stageEvents, "needs_docs", row.application_id, row.performed_at, hasDateFilter);
+      }
       continue;
     }
 
@@ -206,16 +216,23 @@ export async function GET(request: Request) {
     };
   });
 
-  return NextResponse.json({
-    ok: true,
-    data: {
-      summary,
-      stages,
-      filters: {
-        groupBy: filters.groupBy,
-        dateFrom: filters.dateFrom?.toISOString() ?? null,
-        dateTo: filters.dateTo?.toISOString() ?? null,
+  return NextResponse.json(
+    {
+      ok: true,
+      data: {
+        summary,
+        stages,
+        filters: {
+          groupBy: filters.groupBy,
+          dateFrom: filters.dateFrom?.toISOString() ?? null,
+          dateTo: filters.dateTo?.toISOString() ?? null,
+        },
       },
     },
-  });
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
+  );
 }
